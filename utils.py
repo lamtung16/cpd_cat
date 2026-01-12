@@ -1,7 +1,7 @@
 import numpy as np
 from scipy.linalg import sqrtm, inv, logm, expm
 
-
+# ------------------------------ DISTANCE AND MEAN ------------------------------
 # distance between two data points
 def distance(a, b, distance_kind):
     match distance_kind:
@@ -99,7 +99,7 @@ def mean(seg, distance_kind):
                 M = M_new
             return M
 
-
+# ------------------------------ CAT-OP ------------------------------
 # centroids: mean of each signal segment
 def init_mean(signal, distance_kind, n_states):
     T = len(signal)
@@ -114,7 +114,7 @@ def init_mean(signal, distance_kind, n_states):
 
 
 # main changepoint detection algorithm
-def cpd(signal, distance_kind, n_states, pen):
+def cpd_cat(signal, distance_kind, n_states, pen):
     centroids = init_mean(signal, distance_kind, n_states)
 
     T = len(signal)
@@ -148,3 +148,60 @@ def cpd(signal, distance_kind, n_states, pen):
         s = last_change[s]
 
     return chpnts + 1
+
+
+#------------------------------ DUBEY-MULLER ------------------------------
+def dm_stat_exact(data: list[np.ndarray], min_size: int = 10, distance_kind: str = 'euclid'):
+    """Compute renormalized T_n(u) for all candidate splits and return the best k."""
+    n = len(data)
+
+    # ---- Global Fréchet mean and variance ----
+    mu_global = mean(data, distance_kind)
+    d2 = np.array([distance(y, mu_global, distance_kind) for y in data])
+    V_global = d2.mean()
+    # Renormalization factor: variance of squared distances
+    d4 = d2**2
+    sigma_hat2 = d4.mean() - V_global**2
+
+    best_stat = 0.0
+    best_k = -1
+
+    for k in range(min_size, n - min_size):
+        u = k / n
+        left = data[:k]
+        right = data[k:]
+        mu_left = mean(left, distance_kind)
+        mu_right = mean(right, distance_kind)
+        V_left = np.mean([distance(y, mu_right, distance_kind) for y in left])
+        V_right = np.mean([distance(y, mu_left, distance_kind) for y in right])
+        VC_left = np.mean([distance(y, mu_left, distance_kind) for y in left])
+        VC_right = np.mean([distance(y, mu_right, distance_kind) for y in right])
+        raw_stat = u * (1 - u) * (
+            (V_left - V_right)**2
+            + (VC_left - V_left + VC_right - V_right)**2
+        )
+        stat = raw_stat / sigma_hat2
+        if stat > best_stat:
+            best_stat = stat
+            best_k = k
+
+    return best_k, best_stat
+
+
+def cpd_dm(signal: list[np.ndarray], min_size: int = 20, threshold: float = 0.05, max_changes: int = 50, distance_kind: str = 'euclid'):
+    n = len(signal)
+    detected = []
+    segments = [(0, n)]
+    while segments and len(detected) < max_changes:
+        start, end = segments.pop()
+        if end - start < 2 * min_size:
+            continue
+        segment_data = signal[start:end]
+        best_k_rel, best_stat = dm_stat_exact(segment_data, min_size, distance_kind)
+        if best_k_rel == -1 or best_stat < threshold:
+            continue
+        best_k = start + best_k_rel
+        detected.append(best_k)
+        segments.append((start, best_k))
+        segments.append((best_k, end))
+    return sorted(detected)
