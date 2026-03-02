@@ -101,7 +101,7 @@ def mean(seg, distance_kind):
 
 # ------------------------------ CAT-OP ------------------------------
 # centroids: mean of each signal segment
-def init_mean(signal, distance_kind, n_states):
+def segment_means(signal, distance_kind, n_states):
     T = len(signal)
     centroids = [None] * n_states
     seg_size = T // n_states
@@ -114,8 +114,12 @@ def init_mean(signal, distance_kind, n_states):
 
 
 # main changepoint detection algorithm
-def cpd_cat(signal, distance_kind, n_states, pen):
-    centroids = init_mean(signal, distance_kind, n_states)
+def cpd_cat(signal, distance_kind, pen, init_mean_strategy, init_mean_params):
+    centroids = None
+    if init_mean_strategy == 'segment_means':
+        centroids = segment_means(signal, distance_kind, init_mean_params)
+    elif init_mean_strategy == 'manual_means':
+        centroids = init_mean_params
 
     T = len(signal)
     M = len(centroids)
